@@ -2,6 +2,7 @@
 local M = {}
 
 local function path()
+  vim.fn.mkdir(vim.fn.stdpath('data'), 'p')
   return vim.fn.stdpath('data') .. '/vimdungeons_scores.json'
 end
 

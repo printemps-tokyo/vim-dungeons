@@ -18,6 +18,7 @@ M.defs = {
 }
 
 local function path()
+  vim.fn.mkdir(vim.fn.stdpath('data'), 'p')
   return vim.fn.stdpath('data') .. '/vimdungeons_achievements.json'
 end
 

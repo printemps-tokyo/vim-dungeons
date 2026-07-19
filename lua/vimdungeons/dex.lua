@@ -5,6 +5,7 @@ local cache = nil
 local dirty = false
 
 local function path()
+  vim.fn.mkdir(vim.fn.stdpath('data'), 'p')
   return vim.fn.stdpath('data') .. '/vimdungeons_dex.json'
 end
 
