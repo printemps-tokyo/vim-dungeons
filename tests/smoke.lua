@@ -5,6 +5,19 @@ vim.opt.rtp:prepend(root)
 -- Tests assert Japanese strings; pin the language to Japanese.
 vim.g.vim_dungeons_lang = 'ja'
 
+-- The game reseeds math.random before every key from its run seed, and an
+-- ordinary run takes that seed from the clock. Several sections below set up
+-- a random dungeon and then assume something about it, so pin the clock the
+-- seed is read from: every run of the suite then sees the same dungeons.
+do
+  local uv = vim.uv or vim.loop
+  local tick = 1
+  uv.hrtime = function()
+    tick = tick + 104729
+    return tick * 1000003
+  end
+end
+
 local dungeon = require('vimdungeons.dungeon')
 
 -- 1. 生成マップの検証（床の上にスポーン・階段、外周は壁、階段まで到達可能）
