@@ -1,6 +1,9 @@
 -- Achievement definitions and persistence (JSON under stdpath('data')).
 local M = {}
 
+-- While a replay plays or is verified, nothing is unlocked.
+M.paused = false
+
 M.defs = {
   { id = 'first_kill', name = 'はじめての一撃', desc = '敵を1体倒す' },
   { id = 'floor5', name = '中層探索者', desc = '地下5階に到達する' },
@@ -50,6 +53,9 @@ end
 
 -- Returns true when newly unlocked, and stores the unlock timestamp.
 function M.unlock(id)
+  if M.paused then
+    return false
+  end
   local list = M.load()
   if list[id] then
     return false

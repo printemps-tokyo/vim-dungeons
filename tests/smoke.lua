@@ -1530,3 +1530,194 @@ assert(game.state() == nil, 'state cleared after quit')
 -- テストが中断セーブを残さないよう掃除する
 require('vimdungeons.save').clear()
 print('quit: OK')
+
+-- 40. 職業（初期能力・持ち物・識別・忍び足）
+do
+  local buf40 = vim.api.nvim_create_buf(false, true)
+  local cls = require('vimdungeons.data')
+  game.new_game(buf40, { class = 'fighter', seed = 7 })
+  local s40 = game.state()
+  assert(s40.class == 'fighter' and s40.player.maxhp == 28 and s40.player.hp == 28, 'fighter hp')
+  assert(s40.player.atk == 8 and s40.player.weapon and s40.player.weapon.id == 'club' and s40.player.weapon.mod == 1, 'fighter kit')
+  game.new_game(buf40, { class = 'thief', seed = 7 })
+  s40 = game.state()
+  local stones = 0
+  for _, it in ipairs(s40.player.inv) do
+    if it.id == 'stone' then
+      stones = it.count
+    end
+  end
+  assert(stones == 5 and s40.player.maxhp == 18, 'thief kit')
+  game.new_game(buf40, { class = 'sage', seed = 7 })
+  s40 = game.state()
+  assert(s40.identified.scroll_f and s40.identified.wand_swap and not s40.identified.herb, 'sage knows scrolls and wands')
+  local wand
+  for _, it in ipairs(s40.player.inv) do
+    if it.id == 'wand_bolt' then
+      wand = it
+    end
+  end
+  assert(wand and wand.charges == 3 and s40.player.maxhp == 16, 'sage kit')
+  -- 職業選択画面: c で盗賊
+  game.new_game(buf40, { choose_class = true, seed = 7 })
+  s40 = game.state()
+  assert(s40.mode == 'class_select', 'class menu first')
+  game.handle('c')
+  s40 = game.state()
+  assert(s40.mode == 'play' and s40.class == 'thief' and s40.replay.class == 'thief' and s40.replay.choose, 'class chosen')
+  assert(#cls.classes == 4, 'four classes')
+  pcall(vim.api.nvim_buf_delete, buf40, { force = true })
+end
+print('classes: OK')
+
+-- 41. キーごとの再シード: 途中で他のコードが math.random を呼んでも同じ結果になる
+do
+  local buf41 = vim.api.nvim_create_buf(false, true)
+  local seq = {}
+  local cycle = { 'o', 'o', 'l', 'j', '.', 'h', 'k', '>', 'o', 'y', 'n' }
+  for i = 1, 400 do
+    seq[i] = cycle[(i % #cycle) + 1]
+  end
+  local function run(noise)
+    game.new_game(buf41, { seed = 4242, class = 'fighter', headless = true })
+    for _, k in ipairs(seq) do
+      if noise then
+        for _ = 1, 3 do
+          math.random()
+        end
+      end
+      game.handle(k)
+      if game.state().mode ~= 'play' and game.state().mode ~= 'inventory' then
+        break
+      end
+    end
+    local s = game.state()
+    return table.concat({ s.floor, s.turn, s.player.x, s.player.y, s.player.hp, s.player.gold, s.mode }, ',')
+  end
+  local a, b = run(false), run(true)
+  assert(a == b, 'same keys, same run despite outside math.random: ' .. a .. ' vs ' .. b)
+  pcall(vim.api.nvim_buf_delete, buf41, { force = true })
+end
+print('reseed: OK')
+
+-- 42. リプレイ: 記録・エンコード・検証・改ざん検知・永続化の停止
+do
+  local rp = require('vimdungeons.replay')
+  local daily = require('vimdungeons.daily')
+  local buf42 = vim.api.nvim_create_buf(false, true)
+  -- 休み続ければ空腹でいずれ倒れる（敵にやられてもよい）。確実に終わる操作列。
+  game.new_game(buf42, { daily = true, daily_date = '2026-11-12', seed = 20261112, choose_class = true, headless = true })
+  game.handle('b') -- 戦士
+  local cycle = { 'o', 'o', '.', '.', '.', '.', '.', '.', '>' }
+  local i = 0
+  while game.state().mode ~= 'dead' and game.state().mode ~= 'won' and i < 20000 do
+    i = i + 1
+    game.handle(cycle[(i % #cycle) + 1])
+  end
+  local s42 = game.state()
+  assert(s42.mode == 'dead' or s42.mode == 'won', 'run ended')
+  local replay = s42.replay
+  assert(replay.result and replay.result.turns == s42.turn and replay.class == 'fighter', 'replay sealed')
+  assert(rp.last() and rp.last().seed == 20261112, 'last replay kept')
+
+  -- 自分の日替わり記録がランキングに入っている
+  local mine = daily.list('2026-11-12')
+  local has_mine = false
+  for _, e in ipairs(mine) do
+    if e.class == 'fighter' and e.source == 'local' and e.turns == s42.turn then
+      has_mine = true
+    end
+  end
+  assert(has_mine, 'daily ranking has the run')
+
+  -- エンコード/デコードの往復
+  local decoded = assert(rp.decode(rp.encode(replay)))
+  assert(#decoded.keys == #replay.keys and decoded.keys[1] == 'b', 'roundtrip keys')
+  assert(rp.decode('{}') == nil and rp.decode('nope') == nil, 'bad files rejected')
+
+  -- 検証: 現在のゲーム状態は退避・復元され、スコアは書かれない
+  local before_state = game.state()
+  local scores_before = vim.json.encode(require('vimdungeons.score').load())
+  local report = rp.verify(decoded)
+  assert(report.ok, 'replay verifies: ' .. tostring(report.err))
+  assert(game.state() == before_state, 'current state restored')
+  assert(vim.json.encode(require('vimdungeons.score').load()) == scores_before, 'verify writes no scores')
+  assert(not require('vimdungeons.score').paused, 'persistence resumed')
+
+  -- 改ざん: 最後のキーを削ると結果が合わない
+  local tampered = vim.deepcopy(decoded)
+  tampered.result.gold = tampered.result.gold + 1
+  assert(not rp.verify(tampered).ok, 'tampered result rejected')
+  local short = vim.deepcopy(decoded)
+  for _ = 1, math.min(50, #short.keys - 1) do
+    table.remove(short.keys)
+  end
+  local r2 = rp.verify(short)
+  assert(not r2.ok, 'truncated keys rejected')
+
+  -- インポート: 他人のリプレイとしてランキングへ
+  decoded.name = 'friend'
+  local imported = rp.import(decoded)
+  assert(imported.ok and imported.rank, 'imported into the ranking')
+  local found = false
+  for _, e in ipairs(daily.list('2026-11-12')) do
+    if e.name == 'friend' and e.source == 'replay' then
+      found = true
+    end
+  end
+  assert(found, 'friend listed')
+
+  -- ランキングの並び: 踏破 > 深い階 > 少ないターン
+  local list = {
+    { outcome = 'dead', floor = 3, turns = 100 },
+    { outcome = 'won', floor = 10, turns = 900 },
+    { outcome = 'dead', floor = 5, turns = 300 },
+    { outcome = 'dead', floor = 5, turns = 200 },
+  }
+  table.sort(list, daily.better)
+  assert(list[1].outcome == 'won' and list[2].turns == 200 and list[4].floor == 3, 'ranking order')
+  pcall(vim.api.nvim_buf_delete, buf42, { force = true })
+end
+print('replay: OK')
+
+-- 43. リプレイの信頼性: Q・不正ファイル・日替わりの照合・フラグ復元
+do
+  local rp = require('vimdungeons.replay')
+  local buf43 = vim.api.nvim_create_buf(false, true)
+  -- play モードの Q はリプレイ中は無視され、タブは閉じない
+  local tabs = #vim.api.nvim_list_tabpages()
+  local r = rp.verify({ version = 1, seed = 5, keys = { 'Q', 'l', 'Q' } })
+  assert(#vim.api.nvim_list_tabpages() == tabs, 'Q in a replay closes nothing')
+  assert(not r.ok, 'unfinished replay is not ok')
+  -- メニュー中の Q は記録される
+  game.new_game(buf43, { seed = 9, headless = true })
+  local s43 = game.state()
+  s43.mode = 'fmotion'
+  s43.pending_f = require('vimdungeons.data').items[1]
+  local n = #s43.replay.keys
+  game.handle('Q')
+  assert(#game.state().replay.keys == n + 1, 'Q outside play mode is recorded')
+  -- 不正なファイル
+  for _, bad in ipairs({
+    '{"version":1,"seed":1,"keys":"l","result":true}',
+    '{"version":1,"seed":-1,"keys":"l"}',
+    '{"version":1,"seed":1,"keys":"l","name":{"x":1}}',
+    '{"version":1,"seed":1,"keys":"l\\u0001"}',
+    '{"version":1,"seed":1,"keys":"l","result":{"outcome":"won","floor":"x","lv":1,"gold":0,"turns":1}}',
+    '{"version":1,"seed":1,"keys":"l","hard":"yes"}',
+  }) do
+    assert(rp.decode(bad) == nil, 'rejected: ' .. bad)
+  end
+  assert(rp.decode(string.rep(' ', rp.MAX_BYTES + 1)) == nil, 'too large rejected')
+  -- 日替わりは日付由来のシードでなければ登録しない
+  local fake = { version = 1, seed = 42, daily = '1999-01-01', keys = { 'l' }, result = { outcome = 'dead', floor = 1, lv = 1, gold = 0, turns = 1 } }
+  local rep = rp.import(fake)
+  assert(not rep.ok and rep.err:find('daily dungeon'), 'daily seed checked')
+  -- フラグは元の値に戻る
+  require('vimdungeons.score').paused = true
+  rp.verify({ version = 1, seed = 5, keys = { 'l' } })
+  assert(require('vimdungeons.score').paused == true, 'flags restored to their previous values')
+  rp.pause(false)
+  pcall(vim.api.nvim_buf_delete, buf43, { force = true })
+end
+print('replay trust: OK')

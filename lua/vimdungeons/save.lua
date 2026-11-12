@@ -1,12 +1,18 @@
 -- Suspend-save I/O (JSON under stdpath('data')).
 local M = {}
 
+-- While a replay plays or is verified, nothing is written.
+M.paused = false
+
 local function path()
   vim.fn.mkdir(vim.fn.stdpath('data'), 'p')
   return vim.fn.stdpath('data') .. '/vimdungeons_save.json'
 end
 
 function M.write(data)
+  if M.paused then
+    return
+  end
   local f = io.open(path(), 'w')
   if f then
     f:write(vim.json.encode(data))
@@ -29,6 +35,9 @@ function M.load()
 end
 
 function M.clear()
+  if M.paused then
+    return
+  end
   os.remove(path())
 end
 

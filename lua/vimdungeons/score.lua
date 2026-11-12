@@ -1,6 +1,9 @@
 -- Score persistence (JSON under stdpath('data')).
 local M = {}
 
+-- While a replay plays or is verified, nothing is written.
+M.paused = false
+
 local function path()
   vim.fn.mkdir(vim.fn.stdpath('data'), 'p')
   return vim.fn.stdpath('data') .. '/vimdungeons_scores.json'
@@ -22,6 +25,9 @@ end
 
 -- Append entry = {floor, lv, gold, turns}, keep the top 10, and return the list.
 function M.record(entry)
+  if M.paused then
+    return M.load()
+  end
   entry.date = os.date('%Y-%m-%d %H:%M')
   local list = M.load()
   list[#list + 1] = entry

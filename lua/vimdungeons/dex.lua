@@ -4,6 +4,9 @@ local M = {}
 local cache = nil
 local dirty = false
 
+-- While a replay plays or is verified, nothing is recorded.
+M.paused = false
+
 local function path()
   vim.fn.mkdir(vim.fn.stdpath('data'), 'p')
   return vim.fn.stdpath('data') .. '/vimdungeons_dex.json'
@@ -34,6 +37,9 @@ local function entry(name)
 end
 
 function M.mark_seen(name)
+  if M.paused then
+    return
+  end
   local e = entry(name)
   if not e.seen then
     e.seen = true
@@ -42,6 +48,9 @@ function M.mark_seen(name)
 end
 
 function M.mark_kill(name)
+  if M.paused then
+    return
+  end
   local e = entry(name)
   e.seen = true
   e.kills = (e.kills or 0) + 1
@@ -50,7 +59,7 @@ end
 
 -- Write to disk when dirty (called on floor change and game end).
 function M.flush()
-  if not dirty then
+  if M.paused or not dirty then
     return
   end
   local f = io.open(path(), 'w')

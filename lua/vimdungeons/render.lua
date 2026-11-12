@@ -9,6 +9,9 @@ local ns_anim = api.nvim_create_namespace('vimdungeons_anim')
 
 -- Projectile animation: light up each path cell frame by frame (no-op without a UI).
 function M.animate(st, path, ch, hl)
+  if not st or st.headless then
+    return
+  end
   if #api.nvim_list_uis() == 0 or not st or not api.nvim_buf_is_valid(st.buf) then
     return
   end
@@ -62,6 +65,9 @@ local function open_float(st, lines)
 end
 
 function M.draw(st)
+  if st.headless then
+    return
+  end
   if not st or not api.nvim_buf_is_valid(st.buf) then
     return
   end
@@ -242,6 +248,15 @@ function M.draw(st)
       '',
       T(' q:閉じる'),
     })
+  elseif st.mode == 'class_select' then
+    local data = require('vimdungeons.data')
+    local ls = { T(' == 職業を選ぶ =='), '' }
+    for i, c in ipairs(data.classes) do
+      ls[#ls + 1] = (' %s) %s - %s'):format(string.char(96 + i), T(c.name), T(c.desc))
+    end
+    ls[#ls + 1] = ''
+    ls[#ls + 1] = (T(' a-%s:選ぶ')):format(string.char(96 + #data.classes))
+    open_float(st, ls)
   elseif st.mode == 'dead' or st.mode == 'won' then
     local ls
     if st.mode == 'won' then
@@ -282,6 +297,12 @@ function M.draw(st)
       end
     end
     ls[#ls + 1] = (T('  実績: %d/%d (:VimDungeonsAchievements)')):format(done, #ach.defs)
+    if st.daily and not st.replaying then
+      ls[#ls + 1] = (T('  日替わり順位: :VimDungeonsRanking %s')):format(st.daily)
+    end
+    if not st.replaying then
+      ls[#ls + 1] = T('  リプレイ保存: :VimDungeonsReplay export')
+    end
     ls[#ls + 1] = ''
     if st.mode == 'won' and not st.hard then
       ls[#ls + 1] = T('  r:もう一度  h:裏ダンジョンへ  q:やめる')

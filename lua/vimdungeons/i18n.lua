@@ -276,6 +276,43 @@ local en = {
   ['裏ダンジョンで地下15階に到達する'] = 'Reach floor B15 in the Abyss',
   ['ダンジョンを踏破する'] = 'Conquer the dungeon',
   ['Vimの聖典を手に入れた！ダンジョン踏破だ！'] = 'You obtained the Tome of Vim! The dungeon is conquered!',
+
+  -- Classes
+  [' == 職業を選ぶ =='] = ' == Choose a class ==',
+  [' a-%s:選ぶ'] = ' a-%s: choose',
+  ['%sとして冒険を始める'] = 'You set out as a %s.',
+  ['放浪者'] = 'Wanderer',
+  ['標準の能力で出発する'] = 'The standard start',
+  ['戦士'] = 'Fighter',
+  ['最大HP+8・攻撃+2。こん棒+1を装備して出発'] = 'Max HP +8, attack +2; starts wielding a Club+1',
+  ['盗賊'] = 'Thief',
+  ['生まれつき忍び足。石を5個持つ。最大HP-2'] = 'Born sneaking (sleepers in your room stay asleep); 5 stones; max HP -2',
+  ['賢者'] = 'Sage',
+  ['巻物と杖を最初から識別。いかずちの杖[3]を持つ。最大HP-4'] = 'Knows every scroll and wand; carries a Wand of Lightning [3]; max HP -4',
+  ['力尽きた…'] = 'You have fallen...',
+
+  -- Replays and the daily ranking
+  ['  リプレイ保存: :VimDungeonsReplay export'] = '  Save the replay: :VimDungeonsReplay export',
+  ['  日替わり順位: :VimDungeonsRanking %s'] = '  Daily ranking: :VimDungeonsRanking %s',
+  [' / %sの日替わり %d位に登録'] = ' / ranked in the %s daily at #%d',
+  [' / ランキング圏外'] = ' / not in the top 20',
+  [' / 日替わりではないのでランキングには載らない'] = ' / not a daily run, so it is not ranked',
+  [' == 日替わりランキング %s =='] = ' == Daily ranking %s ==',
+  [' [リプレイ検証済]'] = ' [verified replay]',
+  [' まだ記録がない (:VimDungeonsDaily で挑戦)'] = ' No runs yet (play :VimDungeonsDaily)',
+  [' 他の人のリプレイは :VimDungeonsReplay import ファイル で追加'] = " Add others' runs with :VimDungeonsReplay import FILE",
+  ['%sのリプレイを再生中 (q:停止 Space:一時停止 +/-:速さ)'] = "Playing %s's replay (q: stop, Space: pause, +/-: speed)",
+  ['B%dFで力尽きた Lv%d %dG %dターン'] = 'fell on B%dF, Lv%d, %dG, %d turns',
+  ['踏破 B%dF Lv%d %dG %dターン'] = 'cleared B%dF, Lv%d, %dG, %d turns',
+  ['リプレイがない'] = 'No replay',
+  ['リプレイを書き出した: %s'] = 'Replay written: %s',
+  ['リプレイ終了: %s'] = 'Replay finished: %s',
+  ['使い方: :VimDungeonsReplay export [ファイル] | play [ファイル] | verify ファイル | import ファイル'] = 'Usage: :VimDungeonsReplay export [FILE] | play [FILE] | verify FILE | import FILE',
+  ['保存できるリプレイがない(冒険を最後まで終えると記録される)'] = 'No replay to save yet (a run is recorded when it ends)',
+  ['書き出せなかった: %s'] = 'Could not write %s',
+  ['検証NG: %s (主張: %s / 再現: %s)'] = 'Verification failed: %s (claimed: %s / replayed: %s)',
+  ['検証OK: %s'] = 'Verified: %s',
+  ['進行中の冒険がある。終えるか Q で中断してから再生しよう'] = 'A run is in progress. Finish it or suspend it with Q before playing a replay.',
 }
 
 function M.lang()

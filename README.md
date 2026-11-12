@@ -31,8 +31,13 @@ B1F  Lv:1  HP:17/20  Hunger:95  G:0  Turn:35  Wpn:Club  Shd:-  Brc:-
 - Traps (spikes, poison darts, confusion, warps, pitfalls, big-room collapse, summons)
 - Quality of life: dash, auto-explore, throw/zap projectile animations,
   message log, suspend save
+- Four classes: the balanced Wanderer, the sturdy Fighter, the sneaking
+  Thief, and the Sage who knows every scroll and wand
 - Meta progression: high scores, 13 achievements, a monster codex,
-  a 25-floor hard mode, and a date-seeded daily challenge
+  a 25-floor hard mode, and a date-seeded daily challenge with a local ranking
+- Replays: every finished run is recorded as its seed and keystrokes; export
+  it, watch it, or send it to a friend, whose copy re-plays it to check the
+  result before adding it to their daily ranking
 
 ## Requirements
 
@@ -48,6 +53,7 @@ With [lazy.nvim](https://github.com/folke/lazy.nvim):
   cmd = {
     'VimDungeons', 'VimDungeonsHard', 'VimDungeonsDaily',
     'VimDungeonsScores', 'VimDungeonsAchievements', 'VimDungeonsDex',
+    'VimDungeonsReplay', 'VimDungeonsRanking',
   },
 }
 ```
@@ -71,12 +77,36 @@ vim.g.vim_dungeons_lang = 'ja'
 
 | Command | Description |
 |---|---|
-| `:VimDungeons` | Start (resumes a suspend save if one exists; `:VimDungeons!` starts fresh) |
-| `:VimDungeonsHard` | The Abyss: 25 floors, no starting supplies, steeper scaling |
-| `:VimDungeonsDaily` | Daily challenge: everyone gets the same dungeon that day |
+| `:VimDungeons [class]` | Start (resumes a suspend save if one exists; `:VimDungeons!` or a class starts fresh) |
+| `:VimDungeonsHard [class]` | The Abyss: 25 floors, no starting supplies, steeper scaling |
+| `:VimDungeonsDaily [class]` | Daily challenge: everyone gets the same dungeon that day |
+| `:VimDungeonsRanking [YYYY-MM-DD]` | The local daily ranking (today by default) |
+| `:VimDungeonsReplay export [file]` | Write the last finished run's replay to a file |
+| `:VimDungeonsReplay play [file]` | Watch a replay (the last run by default): `q` stop, `Space` pause, `+`/`-` speed |
+| `:VimDungeonsReplay verify file` | Re-play a replay without drawing and check the result it claims |
+| `:VimDungeonsReplay import file` | Verify a replay and, for a daily run, add it to that day's ranking |
 | `:VimDungeonsScores` | High scores (top 10) |
 | `:VimDungeonsAchievements` | Achievement progress (13 total) |
 | `:VimDungeonsDex` | Monster codex (encounters and kill counts) |
+
+## Classes
+
+Without a class argument (and without `vim.g.vim_dungeons_class`), a new run
+starts with a class menu. `r` after a run starts again with the same class.
+
+| Class | Start |
+|---|---|
+| `wanderer` | The original start: 20 HP, attack 6, bread and a herb |
+| `fighter` | Max HP +8, attack +2, wielding a Club+1 |
+| `thief` | Born sneaking: sleepers in your room stay asleep, as with the Sneaking bracelet. Carries 5 stones. Max HP -2 |
+| `sage` | Every scroll and wand is identified from the start. Carries a Wand of Lightning with 3 charges. Max HP -4 |
+
+Every class also gets the bread and herb (none in the Abyss).
+
+```lua
+vim.g.vim_dungeons_class = 'thief' -- skip the menu
+vim.g.vim_dungeons_name = 'alice'  -- your name in replays and the daily ranking
+```
 
 ## Controls
 
@@ -165,12 +195,36 @@ vim.g.vim_dungeons_lang = 'ja'
 - Daily challenge (`:VimDungeonsDaily`): the dungeon is seeded by the date
 - Achievements and the monster codex persist across runs
 
+### Replays and the daily ranking
+
+- A replay is the run's seed, mode, class, and every key you pressed. The
+  game reseeds its random numbers before each key from the seed and the key's
+  position, so the same keys always give the same run, even if other plugins
+  use `math.random` meanwhile
+- When a run ends it becomes the last replay (kept on disk). Write it out with
+  `:VimDungeonsReplay export` and share the file
+- `:VimDungeonsReplay verify` and `import` play the keys back without drawing
+  and compare the outcome, floor, level, gold, and turns with what the file
+  claims. Watching or checking a replay never writes scores, saves,
+  achievements, or the codex
+- Your own daily runs enter that day's ranking when they end. Friends' daily
+  runs enter it through `import`, only when they verify, marked as verified
+  replays. The ranking puts clears first, then deeper floors, fewer turns, and
+  more gold, and keeps the top 20 per day
+- `import` adds a daily run only if its seed is that day's date seed and it
+  is not the Abyss, and takes the class from the re-played run. Replay files
+  over 1 MiB or 200,000 keys are refused
+- Replays depend on the Lua that runs Neovim: one recorded under LuaJIT may not
+  verify under a Neovim built with PUC Lua, and a run that was suspended and
+  resumed may not play back exactly. `verify` says so instead of accepting it
+
 ## Development
 
-Run the test suite (39 sections, headless):
+Run the test suite (43 sections, headless). The tests write scores and
+replays into Neovim's data directory, so point it somewhere disposable:
 
 ```sh
-nvim --headless --clean -l tests/smoke.lua
+XDG_DATA_HOME=$(mktemp -d) nvim --headless --clean -l tests/smoke.lua
 ```
 
 Balance measurement (a BFS-driven bot plays N runs and reports win rate,
@@ -197,6 +251,8 @@ lua/vimdungeons/score.lua        high-score persistence
 lua/vimdungeons/achievements.lua achievement definitions and persistence
 lua/vimdungeons/save.lua         suspend-save I/O
 lua/vimdungeons/dex.lua          monster codex persistence
+lua/vimdungeons/replay.lua       replay encoding, playback setup, verify, import
+lua/vimdungeons/daily.lua        local daily ranking
 tests/smoke.lua                  smoke tests
 tests/balance.lua                autoplay balance measurement
 ```

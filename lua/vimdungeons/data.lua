@@ -43,6 +43,24 @@ M.scroll_names = { '青い巻物', '赤い巻物', '古びた巻物', '光る巻
 M.wand_names = { 'ひのきの杖', 'ねじれた杖', '鉄の杖' }
 M.ring_names = { '金の腕輪', '銀の腕輪', '銅の腕輪', '翡翠の腕輪', '黒曜石の腕輪' }
 
+-- Classes chosen at the start of a run. The wanderer is the original,
+-- balanced start; the others trade max HP for a kit and a passive.
+M.classes = {
+  { id = 'wanderer', name = '放浪者', desc = '標準の能力で出発する' },
+  { id = 'fighter', name = '戦士', desc = '最大HP+8・攻撃+2。こん棒+1を装備して出発', maxhp = 8, atk = 2, weapon = 'club', weapon_mod = 1 },
+  { id = 'thief', name = '盗賊', desc = '生まれつき忍び足。石を5個持つ。最大HP-2', maxhp = -2, sneak = true, stones = 5 },
+  { id = 'sage', name = '賢者', desc = '巻物と杖を最初から識別。いかずちの杖[3]を持つ。最大HP-4', maxhp = -4, know = { scroll = true, wand = true }, wand = 'wand_bolt', charges = 3 },
+}
+
+function M.class_by_id(id)
+  for _, c in ipairs(M.classes) do
+    if c.id == id then
+      return c
+    end
+  end
+  return nil
+end
+
 -- Goal items. Picking one up wins the game.
 M.goal = { id = 'tome', name = 'Vimの聖典', char = '&', kind = 'goal' }
 M.goal_hard = { id = 'tome_hard', name = 'Neovimの奥義書', char = '&', kind = 'goal' }

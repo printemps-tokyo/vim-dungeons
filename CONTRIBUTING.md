@@ -12,7 +12,7 @@ Thanks for your interest in contributing to a printemps-tokyo project.
 3. Create a branch: `git switch -c feat/your-change`
 4. Make your change and verify locally:
    ```bash
-   nvim --headless --clean -l tests/smoke.lua
+   XDG_DATA_HOME=$(mktemp -d) nvim --headless --clean -l tests/smoke.lua
    ```
 5. Commit and open a pull request
 

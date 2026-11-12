@@ -345,6 +345,9 @@ local check_mhouse
 
 -- Whether the bracelet with the given id is worn.
 local function has_ring(id)
+  if id == 'ring_sneak' and st.class == 'thief' then
+    return true -- the thief sneaks without the bracelet
+  end
   return st.player.ring ~= nil and st.player.ring.id == id
 end
 
@@ -626,7 +629,9 @@ local function advance_turn()
       floor = st.floor, lv = p.lv, gold = p.gold, turns = st.turn, cause = st.cause,
       hard = st.hard or nil,
       daily = st.daily,
+      class = st.class,
     })
+    M.finish_run()
   end
   compute_fov()
   for _, e in ipairs(st.enemies) do
@@ -710,7 +715,9 @@ local function pickup()
           floor = st.floor, lv = p.lv, gold = p.gold, turns = st.turn, cleared = true,
           hard = st.hard or nil,
           daily = st.daily,
+          class = st.class,
         })
+        M.finish_run()
       elseif #p.inv >= INV_MAX then
         msg(T('持ち物がいっぱいで%sを拾えない'):format(disp(it.def)))
       else
@@ -826,7 +833,9 @@ local function dash(dx, dy)
       end
     end
     render.draw(st)
-    vim.cmd('redraw')
+    if not st.headless then
+      vim.cmd('redraw')
+    end
   end
 end
 
@@ -915,7 +924,9 @@ local function auto_explore()
     move_player(fx - p.x, fy - p.y)
     moved = true
     render.draw(st)
-    vim.cmd('redraw')
+    if not st.headless then
+      vim.cmd('redraw')
+    end
     if st.mode ~= 'play' or #st.messages > msg_count then
       return
     end
@@ -966,17 +977,78 @@ local function descend()
   end
 end
 
-function M.new_game(buf, opts)
-  if opts and opts.daily then
-    -- Date seed: the same day always yields the same dungeon.
-    math.randomseed(tonumber(os.date('%Y%m%d')))
-  else
-    math.randomseed((vim.uv or vim.loop).hrtime() % 2 ^ 31)
+-- Derives the seed used for the n-th key of a run. Reseeding before every
+-- key makes each turn depend only on (run seed, key number), so a replay is
+-- not thrown off by other plugins calling math.random between keys. All
+-- arithmetic stays below 2^53, so it is exact.
+local function key_seed(seed, n)
+  local h = (seed % 2147483647 * 31 + n) % 2147483647
+  h = h * 48271 % 2147483647
+  h = h * 48271 % 2147483647
+  return h
+end
+M.key_seed = key_seed
+
+-- Apply a class: stats, starting kit, passives, and known item kinds.
+local function apply_class(id)
+  local c = data.class_by_id(id) or data.classes[1]
+  st.class = c.id
+  local p = st.player
+  p.maxhp = p.maxhp + (c.maxhp or 0)
+  p.hp = p.maxhp
+  p.atk = p.atk + (c.atk or 0)
+  for _, d in ipairs(data.items) do
+    if c.weapon and d.id == c.weapon then
+      p.weapon = vim.tbl_extend('force', {}, d, { mod = c.weapon_mod or 0 })
+    end
+    if c.stones and d.id == 'stone' then
+      table.insert(p.inv, vim.tbl_extend('force', {}, d, { count = c.stones }))
+    end
+    if c.wand and d.id == c.wand then
+      table.insert(p.inv, vim.tbl_extend('force', {}, d, { charges = c.charges or 3 }))
+    end
+    if c.know and d.unidentified then
+      local kind = d.id:match('^(%a+)_')
+      if c.know[kind] then
+        st.identified[d.id] = true
+      end
+    end
   end
+end
+
+-- The run's replay: everything needed to play it back.
+local function new_replay()
+  return {
+    version = 1,
+    seed = st.seed,
+    class = st.class,
+    hard = st.hard or nil,
+    daily = st.daily,
+    lua = jit and jit.version or _VERSION,
+    keys = {},
+  }
+end
+
+function M.new_game(buf, opts)
+  opts = opts or {}
+  local seed = opts.seed
+  if not seed then
+    if opts.daily then
+      -- Date seed: the same day always yields the same dungeon.
+      seed = tonumber(os.date('%Y%m%d'))
+    else
+      seed = math.floor((vim.uv or vim.loop).hrtime() % 2 ^ 31)
+    end
+  end
+  math.randomseed(seed)
   st = {
     buf = buf,
-    hard = (opts and opts.hard) or false,
-    daily = (opts and opts.daily) and os.date('%Y-%m-%d') or nil,
+    seed = seed,
+    keyn = 0,
+    replaying = opts.replaying or nil,
+    headless = opts.headless or nil,
+    hard = opts.hard or false,
+    daily = opts.daily and (opts.daily_date or os.date('%Y-%m-%d')) or nil,
     floor = 1,
     turn = 0,
     mode = 'play',
@@ -1029,6 +1101,14 @@ function M.new_game(buf, opts)
     end
   end
   setup_floor()
+  st.class = 'wanderer'
+  if opts.choose_class then
+    st.mode = 'class_select'
+  else
+    apply_class(opts.class or 'wanderer')
+  end
+  st.replay = new_replay()
+  st.replay.choose = opts.choose_class or nil
   if st.hard then
     msg(T('裏ダンジョン『無限ヤンクの奈落』に足を踏み入れた…'))
     msg(T('Neovimの奥義書が地下%d階に眠るという。支給品はない'):format(HARD_GOAL_FLOOR))
@@ -1069,11 +1149,36 @@ function M.handle(key)
   if not st then
     return
   end
+  -- Q quits only in play mode; in menus it is an ordinary key (a Scroll of
+  -- f target, a cancel), so it is recorded there like any other.
+  local quitting = key == 'Q' and st.mode == 'play'
+  if quitting and st.replaying then
+    return -- a replay never suspends the game or closes windows
+  end
+  if st.mode ~= 'dead' and st.mode ~= 'won' and not quitting then
+    st.keyn = (st.keyn or 0) + 1
+    math.randomseed(key_seed(st.seed or 0, st.keyn))
+    if st.replay then
+      st.replay.keys[#st.replay.keys + 1] = key
+    end
+  end
+  if st.mode == 'class_select' then
+    local idx = #key == 1 and (key:byte() - 96) or 0
+    if data.classes[idx] then
+      st.mode = 'play'
+      apply_class(data.classes[idx].id)
+      st.replay.class = st.class
+      msg(T('%sとして冒険を始める'):format(T(data.classes[idx].name)))
+    end
+    render.draw(st)
+    return
+  end
   if st.mode == 'dead' or st.mode == 'won' then
     if key == 'r' then
-      M.new_game(st.buf, { hard = st.hard, daily = st.daily and true or nil })
+      -- Play again with the same class.
+      M.new_game(st.buf, { hard = st.hard, daily = st.daily and true or nil, class = st.class })
     elseif key == 'h' and st.mode == 'won' and not st.hard then
-      M.new_game(st.buf, { hard = true })
+      M.new_game(st.buf, { hard = true, class = st.class })
     elseif key == 'q' then
       M.quit()
     end
@@ -1276,6 +1381,10 @@ function M.serialize()
       angry = st.shop.angry or false,
     } or nil,
     consumed_debt = st.consumed_debt or 0,
+    seed = st.seed,
+    keyn = st.keyn,
+    class = st.class,
+    replay = st.replay,
   }
 end
 
@@ -1321,6 +1430,16 @@ function M.resume(buf, s)
       floor_cells = floor_cells,
     },
   }
+  st.seed = s.seed
+  st.keyn = s.keyn or 0
+  st.class = s.class or 'wanderer'
+  st.replay = s.replay
+  if st.replay then
+    -- A suspend and resume restores only what the save holds, so playing
+    -- this run back may not match; the replay says so.
+    st.replay.suspended = true
+    st.replay.keys = st.replay.keys or {}
+  end
   st.player.status = st.player.status or {}
   st.player.inv = st.player.inv or {}
   for _, k in ipairs(s.explored or {}) do
@@ -1343,6 +1462,47 @@ end
 -- Expose internal state for tests.
 function M.state()
   return st
+end
+
+-- Called when a run ends (death or victory): seal the replay with its
+-- result, keep it as the last replay, and add daily runs to the ranking.
+-- Swap the game state (to check a replay without losing the current run).
+function M.swap_state(s)
+  local old = st
+  st = s
+  return old
+end
+
+function M.finish_run()
+  if not st.replay then
+    return
+  end
+  local p = st.player
+  st.replay.result = {
+    outcome = st.mode,
+    floor = st.floor,
+    lv = p.lv,
+    gold = p.gold,
+    turns = st.turn,
+    cause = st.cause,
+  }
+  if st.replaying then
+    return
+  end
+  local replay = require('vimdungeons.replay')
+  replay.remember(st.replay)
+  if st.daily then
+    require('vimdungeons.daily').record(st.daily, {
+      name = replay.player_name(),
+      class = st.class,
+      outcome = st.mode,
+      floor = st.floor,
+      lv = p.lv,
+      gold = p.gold,
+      turns = st.turn,
+      source = 'local',
+    })
+  end
 end
 
 -- Inject the internal API into the enemies/items subsystems.
